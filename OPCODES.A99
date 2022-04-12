@@ -1,0 +1,464 @@
+* --- ADC ---
+* $69 (105) ADCI   - Immediate     ADC #$44      $69  2   2
+* $65 (101) ADCZ   - Zero Page     ADC $44       $65  2   3
+* $75 (117) ADCZX  - Zero Page,X   ADC $44,X     $75  2   4
+* $6d (109) ADCA   - Absolute      ADC $4400     $6D  3   4
+* $7d (125) ADCAX  - Absolute,X    ADC $4400,X   $7D  3   4+
+* $79 (121) ADCAY  - Absolute,Y    ADC $4400,Y   $79  3   4+
+* $61 ( 97) ADCIX  - Indirect,X    ADC ($44,X)   $61  2   6
+* $71 (113) ADCIY  - Indirect,Y    ADC ($44),Y   $71  2   5+
+* --- AND ---
+* $29 ( 41) ANDI   - Immediate     AND #$44      $29  2   2
+* $25 ( 37) ANDZ   - Zero Page     AND $44       $25  2   2
+* $35 ( 53) ANDZX  - Zero Page,X   AND $44,X     $35  2   3
+* $2d ( 45) ANDA   - Absolute      AND $4400     $2D  3   4
+* $3d ( 61) ANDAX  - Absolute,X    AND $4400,X   $3D  3   4+
+* $39 ( 57) ANDAY  - Absolute,Y    AND $4400,Y   $39  3   4+
+* $21 ( 33) ANDIX  - Indirect,X    AND ($44,X)   $21  2   6
+* $31 ( 49) ANDIY  - Indirect,Y    AND ($44),Y   $31  2   5+
+* --- ASL ---
+* $0a ( 10) ASLACC - Accumulator   ASL A         $0A  1   2
+* $06 (  6) ASLZ   - Zero Page     ASL $44       $06  2   5
+* $16 ( 22) ASLZX  - Zero Page,X   ASL $44,X     $16  2   6
+* $0e ( 14) ASLA   - Absolute      ASL $4400     $0E  3   6
+* $1e ( 30) ASLAX  - Absolute,X    ASL $4400,X   $1E  3   7
+* --- BIT ---
+* $24 ( 36) BITZ   - Zero Page     BIT $44       $24  2   3
+* $2c ( 44) BITA   - Absolute      BIT $4400     $2C  3   4
+* --- BPL ---
+* $10 ( 16) BPL    - BPL (Branch on PLus)           $10
+* --- BMI ---
+* $30 ( 48) BMI    - BMI (Branch on MInus)          $30
+* --- BVC ---
+* $50 ( 80) BVC    - BVC (Branch on oVerflow Clear) $50
+* --- BVS ---
+* $70 (112) BVS    - BVS (Branch on oVerflow Set)   $70
+* --- BCC ---
+* $90 (144) BCC    - BCC (Branch on Carry Clear)    $90
+* --- BCS ---
+* $b0 (176) BCS    - BCS (Branch on Carry Set)      $B0
+* --- BNE ---
+* $d0 (208) BNE    - BNE (Branch on Not Equal)      $D0
+* --- BEQ ---
+* $f0 (240) BEQ    - BEQ (Branch on EQual)          $F0
+* --- BRK ---
+* $00 (  0) BRK    - Implied       BRK           $00  1   7
+* --- CMP ---
+* $c9 (201) CMPI   - Immediate     CMP #$44      $C9  2   2
+* $c5 (197) CMPZ   - Zero Page     CMP $44       $C5  2   3
+* $d5 (213) CMPZX  - Zero Page,X   CMP $44,X     $D5  2   4
+* $cd (205) CMPA   - Absolute      CMP $4400     $CD  3   4
+* $dd (221) CMPAX  - Absolute,X    CMP $4400,X   $DD  3   4+
+* $d9 (217) CMPAY  - Absolute,Y    CMP $4400,Y   $D9  3   4+
+* $c1 (193) CMPIX  - Indirect,X    CMP ($44,X)   $C1  2   6
+* $d1 (209) CMPIY  - Indirect,Y    CMP ($44),Y   $D1  2   5+
+* --- CPX ---
+* $e0 (224) CPXI   - Immediate     CPX #$44      $E0  2   2
+* $e4 (228) CPXZ   - Zero Page     CPX $44       $E4  2   3
+* $ec (236) CPXA   - Absolute      CPX $4400     $EC  3   4
+* --- CPY ---
+* $c0 (192) CPYI   - Immediate     CPY #$44      $C0  2   2
+* $c4 (196) CPYZ   - Zero Page     CPY $44       $C4  2   3
+* $cc (204) CPYA   - Absolute      CPY $4400     $CC  3   4
+* --- DEC ---
+* $c6 (198) DECZ   - Zero Page     DEC $44       $C6  2   5
+* $d6 (214) DECZX  - Zero Page,X   DEC $44,X     $D6  2   6
+* $ce (206) DECA   - Absolute      DEC $4400     $CE  3   6
+* $de (222) DECAX  - Absolute,X    DEC $4400,X   $DE  3   7
+* --- EOR ---
+* $49 ( 73) EORI   - Immediate     EOR #$44      $49  2   2
+* $45 ( 69) EORZ   - Zero Page     EOR $44       $45  2   3
+* $55 ( 85) EORZX  - Zero Page,X   EOR $44,X     $55  2   4
+* $4d ( 77) EORA   - Absolute      EOR $4400     $4D  3   4
+* $5d ( 93) EORAX  - Absolute,X    EOR $4400,X   $5D  3   4+
+* $59 ( 89) EORAY  - Absolute,Y    EOR $4400,Y   $59  3   4+
+* $41 ( 65) EORIX  - Indirect,X    EOR ($44,X)   $41  2   6
+* $51 ( 81) EORIY  - Indirect,Y    EOR ($44),Y   $51  2   5+
+* --- CLC ---
+* $18 ( 24) CLC    - CLC (CLear Carry)              $18
+* --- SEC ---
+* $38 ( 56) SEC    - SEC (SEt Carry)                $38
+* --- CLI ---
+* $58 ( 88) CLI    - CLI (CLear Interrupt)          $58
+* --- SEI ---
+* $78 (120) SEI    - SEI (SEt Interrupt)            $78
+* --- CLV ---
+* $b8 (184) CLV    - CLV (CLear oVerflow)           $B8
+* --- CLD ---
+* $d8 (216) CLD    - CLD (CLear Decimal)            $D8
+* --- SED ---
+* $f8 (248) SED    - SED (SEt Decimal)              $F8
+* --- INC ---
+* $e6 (230) INCZ   - Zero Page     INC $44       $E6  2   5
+* $f6 (246) INCZX  - Zero Page,X   INC $44,X     $F6  2   6
+* $ee (238) INCA   - Absolute      INC $4400     $EE  3   6
+* $fe (254) INCAX  - Absolute,X    INC $4400,X   $FE  3   7
+* --- JMP ---
+* $4c ( 76) JMPA   - Absolute      JMP $5597     $4C  3   3 
+* $6c (108) JMPI   - Indirect      JMP ($5597)   $6C  3   5 
+* --- JSR ---
+* $20 ( 32) JSRA   - Absolute      JSR $5597     $20  3   6 
+* --- LDA ---
+* $a9 (169) LDAI   - Immediate     LDA #$44      $A9  2   2
+* $a5 (165) LDAZ   - Zero Page     LDA $44       $A5  2   3
+* $b5 (181) LDAZX  - Zero Page,X   LDA $44,X     $B5  2   4
+* $ad (173) LDAA   - Absolute      LDA $4400     $AD  3   4
+* $bd (189) LDAAX  - Absolute,X    LDA $4400,X   $BD  3   4+
+* $b9 (185) LDAAY  - Absolute,Y    LDA $4400,Y   $B9  3   4+
+* $a1 (161) LDAIX  - Indirect,X    LDA ($44,X)   $A1  2   6
+* $b1 (177) LDAIY  - Indirect,Y    LDA ($44),Y   $B1  2   5+
+* --- LDX ---
+* $a2 (162) LDXI   - Immediate     LDX #$44      $A2  2   2
+* $a6 (166) LDXZ   - Zero Page     LDX $44       $A6  2   3
+* $b6 (182) LDXZY  - Zero Page,Y   LDX $44,Y     $B6  2   4
+* $ae (174) LDXA   - Absolute      LDX $4400     $AE  3   4
+* $be (190) LDXAY  - Absolute,Y    LDX $4400,Y   $BE  3   4+
+* --- LDY ---
+* $a0 (160) LDYI   - Immediate     LDY #$44      $A0  2   2
+* $a4 (164) LDYZ   - Zero Page     LDY $44       $A4  2   3
+* $b4 (180) LDYZX  - Zero Page,X   LDY $44,X     $B4  2   4
+* $ac (172) LDYA   - Absolute      LDY $4400     $AC  3   4
+* $bc (188) LDYAX  - Absolute,X    LDY $4400,X   $BC  3   4+
+* --- LSR ---
+* $4a ( 74) LSRACC - Accumulator   LSR A         $4A  1   2
+* $46 ( 70) LSRZ   - Zero Page     LSR $44       $46  2   5
+* $56 ( 86) LSRZX  - Zero Page,X   LSR $44,X     $56  2   6
+* $4e ( 78) LSRA   - Absolute      LSR $4400     $4E  3   6
+* $5e ( 94) LSRAX  - Absolute,X    LSR $4400,X   $5E  3   7
+* --- NOP ---
+* $ea (234) NOP    - Implied       NOP           $EA  1   2
+* --- ORA ---
+* $09 (  9) ORAI   - Immediate     ORA #$44      $09  2   2
+* $05 (  5) ORAZ   - Zero Page     ORA $44       $05  2   2
+* $15 ( 21) ORAZX  - Zero Page,X   ORA $44,X     $15  2   3
+* $0d ( 13) ORAA   - Absolute      ORA $4400     $0D  3   4
+* $1d ( 29) ORAAX  - Absolute,X    ORA $4400,X   $1D  3   4+
+* $19 ( 25) ORAAY  - Absolute,Y    ORA $4400,Y   $19  3   4+
+* $01 (  1) ORAIX  - Indirect,X    ORA ($44,X)   $01  2   6
+* $11 ( 17) ORAIY  - Indirect,Y    ORA ($44),Y   $11  2   5+
+* --- TAX ---
+* $aa (170) TAX    - TAX (Transfer A to X)    $AA
+* --- TXA ---
+* $8a (138) TXA    - TXA (Transfer X to A)    $8A
+* --- DEX ---
+* $ca (202) DEX    - DEX (DEcrement X)        $CA
+* --- INX ---
+* $e8 (232) INX    - INX (INcrement X)        $E8
+* --- TAY ---
+* $a8 (168) TAY    - TAY (Transfer A to Y)    $A8
+* --- TYA ---
+* $98 (152) TYA    - TYA (Transfer Y to A)    $98
+* --- DEY ---
+* $88 (136) DEY    - DEY (DEcrement Y)        $88
+* --- INY ---
+* $c8 (200) INY    - INY (INcrement Y)        $C8
+* --- ROL ---
+* $2a ( 42) ROLACC - Accumulator   ROL A         $2A  1   2
+* $26 ( 38) ROLZ   - Zero Page     ROL $44       $26  2   5
+* $36 ( 54) ROLZX  - Zero Page,X   ROL $44,X     $36  2   6
+* $2e ( 46) ROLA   - Absolute      ROL $4400     $2E  3   6
+* $3e ( 62) ROLAX  - Absolute,X    ROL $4400,X   $3E  3   7
+* --- ROR ---
+* $6a (106) RORACC - Accumulator   ROR A         $6A  1   2
+* $66 (102) RORZ   - Zero Page     ROR $44       $66  2   5
+* $76 (118) RORZX  - Zero Page,X   ROR $44,X     $76  2   6
+* $6e (110) RORA   - Absolute      ROR $4400     $6E  3   6
+* $7e (126) RORAX  - Absolute,X    ROR $4400,X   $7E  3   7
+* --- RTI ---
+* $40 ( 64) RTI    - Implied       RTI           $40  1   6
+* --- RTS ---
+* $60 ( 96) RTS    - Implied       RTS           $60  1   6 
+* --- SBC ---
+* $e9 (233) SBCI   - Immediate     SBC #$44      $E9  2   2
+* $e5 (229) SBCZ   - Zero Page     SBC $44       $E5  2   3
+* $f5 (245) SBCZX  - Zero Page,X   SBC $44,X     $F5  2   4
+* $ed (237) SBCA   - Absolute      SBC $4400     $ED  3   4
+* $fd (253) SBCAX  - Absolute,X    SBC $4400,X   $FD  3   4+
+* $f9 (249) SBCAY  - Absolute,Y    SBC $4400,Y   $F9  3   4+
+* $e1 (225) SBCIX  - Indirect,X    SBC ($44,X)   $E1  2   6
+* $f1 (241) SBCIY  - Indirect,Y    SBC ($44),Y   $F1  2   5+
+* --- STA ---
+* $85 (133) STAZ   - Zero Page     STA $44       $85  2   3
+* $95 (149) STAZX  - Zero Page,X   STA $44,X     $95  2   4
+* $8d (141) STAA   - Absolute      STA $4400     $8D  3   4
+* $9d (157) STAAX  - Absolute,X    STA $4400,X   $9D  3   5
+* $99 (153) STAAY  - Absolute,Y    STA $4400,Y   $99  3   5
+* $81 (129) STAIX  - Indirect,X    STA ($44,X)   $81  2   6
+* $91 (145) STAIY  - Indirect,Y    STA ($44),Y   $91  2   6
+* --- TXS ---
+* $9a (154) TXS    - TXS (Transfer X to Stack ptr)   $9A  2 
+* --- TSX ---
+* $ba (186) TSX    - TSX (Transfer Stack ptr to X)   $BA  2 
+* --- PHA ---
+* $48 ( 72) PHA    - PHA (PusH Accumulator)          $48  3 
+* --- PLA ---
+* $68 (104) PLA    - PLA (PuLl Accumulator)          $68  4 
+* --- PHP ---
+* $08 (  8) PHP    - PHP (PusH Processor status)     $08  3 
+* --- PLP ---
+* $28 ( 40) PLP    - PLP (PuLl Processor status)     $28  4 
+* --- STX ---
+* $86 (134) STXZ   - Zero Page     STX $44       $86  2   3
+* $96 (150) STXZY  - Zero Page,Y   STX $44,Y     $96  2   4
+* $8e (142) STXA   - Absolute      STX $4400     $8E  3   4
+* --- STY ---
+* $84 (132) STYZ   - Zero Page     STY $44       $84  2   3
+* $94 (148) STYZX  - Zero Page,X   STY $44,X     $94  2   4
+* $8c (140) STYA   - Absolute      STY $4400     $8C  3   4
+* Got 151 opcodes.
+OPCODES DATA BRK
+        DATA ORAIX
+        DATA >0000
+        DATA >0000
+        DATA >0000
+        DATA ORAZ
+        DATA ASLZ
+        DATA >0000
+        DATA PHP
+        DATA ORAI
+        DATA ASLACC
+        DATA >0000
+        DATA >0000
+        DATA ORAA
+        DATA ASLA
+        DATA >0000
+        DATA BPL
+        DATA ORAIY
+        DATA >0000
+        DATA >0000
+        DATA >0000
+        DATA ORAZX
+        DATA ASLZX
+        DATA >0000
+        DATA CLC
+        DATA ORAAY
+        DATA >0000
+        DATA >0000
+        DATA >0000
+        DATA ORAAX
+        DATA ASLAX
+        DATA >0000
+        DATA JSRA
+        DATA ANDIX
+        DATA >0000
+        DATA >0000
+        DATA BITZ
+        DATA ANDZ
+        DATA ROLZ
+        DATA >0000
+        DATA PLP
+        DATA ANDI
+        DATA ROLACC
+        DATA >0000
+        DATA BITA
+        DATA ANDA
+        DATA ROLA
+        DATA >0000
+        DATA BMI
+        DATA ANDIY
+        DATA >0000
+        DATA >0000
+        DATA >0000
+        DATA ANDZX
+        DATA ROLZX
+        DATA >0000
+        DATA SEC
+        DATA ANDAY
+        DATA >0000
+        DATA >0000
+        DATA >0000
+        DATA ANDAX
+        DATA ROLAX
+        DATA >0000
+        DATA RTI
+        DATA EORIX
+        DATA >0000
+        DATA >0000
+        DATA >0000
+        DATA EORZ
+        DATA LSRZ
+        DATA >0000
+        DATA PHA
+        DATA EORI
+        DATA LSRACC
+        DATA >0000
+        DATA JMPA
+        DATA EORA
+        DATA LSRA
+        DATA >0000
+        DATA BVC
+        DATA EORIY
+        DATA >0000
+        DATA >0000
+        DATA >0000
+        DATA EORZX
+        DATA LSRZX
+        DATA >0000
+        DATA CLI
+        DATA EORAY
+        DATA >0000
+        DATA >0000
+        DATA >0000
+        DATA EORAX
+        DATA LSRAX
+        DATA >0000
+        DATA RTS
+        DATA ADCIX
+        DATA >0000
+        DATA >0000
+        DATA >0000
+        DATA ADCZ
+        DATA RORZ
+        DATA >0000
+        DATA PLA
+        DATA ADCI
+        DATA RORACC
+        DATA >0000
+        DATA JMPI
+        DATA ADCA
+        DATA RORA
+        DATA >0000
+        DATA BVS
+        DATA ADCIY
+        DATA >0000
+        DATA >0000
+        DATA >0000
+        DATA ADCZX
+        DATA RORZX
+        DATA >0000
+        DATA SEI
+        DATA ADCAY
+        DATA >0000
+        DATA >0000
+        DATA >0000
+        DATA ADCAX
+        DATA RORAX
+        DATA >0000
+        DATA >0000
+        DATA STAIX
+        DATA >0000
+        DATA >0000
+        DATA STYZ
+        DATA STAZ
+        DATA STXZ
+        DATA >0000
+        DATA DEY
+        DATA >0000
+        DATA TXA
+        DATA >0000
+        DATA STYA
+        DATA STAA
+        DATA STXA
+        DATA >0000
+        DATA BCC
+        DATA STAIY
+        DATA >0000
+        DATA >0000
+        DATA STYZX
+        DATA STAZX
+        DATA STXZY
+        DATA >0000
+        DATA TYA
+        DATA STAAY
+        DATA TXS
+        DATA >0000
+        DATA >0000
+        DATA STAAX
+        DATA >0000
+        DATA >0000
+        DATA LDYI
+        DATA LDAIX
+        DATA LDXI
+        DATA >0000
+        DATA LDYZ
+        DATA LDAZ
+        DATA LDXZ
+        DATA >0000
+        DATA TAY
+        DATA LDAI
+        DATA TAX
+        DATA >0000
+        DATA LDYA
+        DATA LDAA
+        DATA LDXA
+        DATA >0000
+        DATA BCS
+        DATA LDAIY
+        DATA >0000
+        DATA >0000
+        DATA LDYZX
+        DATA LDAZX
+        DATA LDXZY
+        DATA >0000
+        DATA CLV
+        DATA LDAAY
+        DATA TSX
+        DATA >0000
+        DATA LDYAX
+        DATA LDAAX
+        DATA LDXAY
+        DATA >0000
+        DATA CPYI
+        DATA CMPIX
+        DATA >0000
+        DATA >0000
+        DATA CPYZ
+        DATA CMPZ
+        DATA DECZ
+        DATA >0000
+        DATA INY
+        DATA CMPI
+        DATA DEX
+        DATA >0000
+        DATA CPYA
+        DATA CMPA
+        DATA DECA
+        DATA >0000
+        DATA BNE
+        DATA CMPIY
+        DATA >0000
+        DATA >0000
+        DATA >0000
+        DATA CMPZX
+        DATA DECZX
+        DATA >0000
+        DATA CLD
+        DATA CMPAY
+        DATA >0000
+        DATA >0000
+        DATA >0000
+        DATA CMPAX
+        DATA DECAX
+        DATA >0000
+        DATA CPXI
+        DATA SBCIX
+        DATA >0000
+        DATA >0000
+        DATA CPXZ
+        DATA SBCZ
+        DATA INCZ
+        DATA >0000
+        DATA INX
+        DATA SBCI
+        DATA NOP
+        DATA >0000
+        DATA CPXA
+        DATA SBCA
+        DATA INCA
+        DATA >0000
+        DATA BEQ
+        DATA SBCIY
+        DATA >0000
+        DATA >0000
+        DATA >0000
+        DATA SBCZX
+        DATA INCZX
+        DATA >0000
+        DATA SED
+        DATA SBCAY
+        DATA >0000
+        DATA >0000
+        DATA >0000
+        DATA SBCAX
+        DATA INCAX
+        DATA >0000

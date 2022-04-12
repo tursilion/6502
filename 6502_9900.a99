@@ -1,0 +1,1465 @@
+* 6502 Emulator for the 9900 CPU
+* This should be interesting...
+* 2004 by M.Brent (Tursi) http://harmlesslion.com
+
+* TODO: To speed execution some, rather than check the decimal flag
+* every instruction, use a different opcode table when the decimal
+* flag is set (ie: change the table when it is set or cleared). This
+* will only use another 512 bytes, plus the extra code for getting
+* the decimal mode arguments on the functions that need it.
+
+* TODO: write an optimizer to rewrite this code after it's working.
+* It should:
+* -Inline all the addressing mode functions (removing their RTs)
+* -Optionally remove cycle counting code (AI R7,xx)
+
+* Register usage (8 bit in MSB):
+* R15 - Accumulator
+* R14 - X register
+* R13 - Y register
+* R12 - Stack pointer (TI Address, current byte)
+* R11 - Reserved, return address for BL
+* R10 - Flags (see below)
+* R9 - Program Counter (TI Address)
+* R8 - unused
+* R7 - Cycle counter (raw tick count)
+* R6 - Return address save
+* R5 - unused
+* R4 - unused
+* R3 - Temporary storage
+* R2 - Temporary storage
+* R1 - Temporary storage
+* R0 - Return values
+
+	DEF START
+
+* Place this in low RAM
+        AORG >2000
+        B @START
+
+* Base address in TI RAM (6502's $0000)
+BASEAD  EQU >A000
+* My workspace
+MYWP    EQU >8300
+CYCLES  EQU >830E   * R7
+
+NEGAT   DATA >8000
+BIT7    DATA >8000
+BIT6    DATA >4000
+BIT5    DATA >2000
+BIT4    DATA >1000
+BIT3    DATA >0800
+BIT2    DATA >0400
+BIT1    DATA >0200
+BIT0    DATA >0100
+
+* Don't change these now unless you change the masks
+FLAG_V  DATA >0800
+FLAG_Z  DATA >2000
+FLAG_C  DATA >1000
+
+FLAG_S  DATA >0001
+
+FLAG_B  DATA >0002
+FLAG_D  DATA >0004
+FLAG_I  DATA >0008
+
+M_SZCV  DATA >3801
+M_SZC   DATA >3001
+M_SZV   DATA >2801
+M_SZ    DATA >2001
+
+X_SZCV  DATA >C7FE
+X_SZC   DATA >CFFE
+X_SZV   DATA >D7FE
+X_SZ    DATA >DFFE
+
+X_FLGD  EQU >FFFB
+
+* Flags are:
+*   V - Overflow - set when borrow or carry (Matches TI OV)
+*   Z - Zero - set when result was 0 (Matches TI EQ)
+*   C - Set when carry (Matches TI C)
+*   N - Negative - set when high bit is set 
+*   D - Decimal - Set when in BCD mode (will be much slower!)
+*   I - Interrupt disable
+*   B - Break active
+*
+* As setting flags is more or less constant, we cheat and map 
+* the TI flags directly into R10,
+* manually adding the flags we have to into the interrupt mask,
+* since we aren't guaranteed the setting of bits 7-11.
+* So, the 6502 never gets it's flags, so the actual word doesn't matter.
+* Note this means you should always call these with the interrupt mask
+* set to >0000!
+
+** Vector lookups (since we don't have a full 64k)
+* Set PC to interrupt vector (TI address)
+V_INT   LI R9,>A200
+        RT
+
+* Set PC to powerup vector (TI address)
+V_PWR   LI R9,>A200     * START RIGHT AFTER THE STACK PAGE
+        RT
+
+** Addressing modes - return value in R0 **
+IMMED   MOVB *R9+,R0
+        RT
+
+ZEROP   CLR R1
+        MOVB *R9+,R1
+        SWPB R1
+        MOVB @BASEAD(R1),R0
+        RT
+
+ZEROPX  CLR R1
+        MOVB *R9+,R1
+        AB R14,R1
+        SWPB R1
+        MOVB @BASEAD(R1),R0
+        RT
+
+ZEROPY  CLR R1
+        MOVB *R9+,R1
+        AB R13,R1
+        SWPB R1
+        MOVB @BASEAD(R1),R0
+        RT
+
+ABSOL   MOVB *R9+,R1
+        SWPB R1
+        MOVB *R9+,R1
+        MOVB @BASEAD(R1),R0
+        RT
+
+ABSOLX  MOVB *R9+,R1
+        SWPB R1
+        MOVB *R9+,R1
+        ANDI R14,>FF00
+        SWPB R14
+        A R14,R1
+        SWPB R14
+        MOVB @BASEAD(R1),R0
+        RT
+
+ABSOLY  MOVB *R9+,R1
+        SWPB R1
+        MOVB *R9+,R1
+        ANDI R13,>FF00
+        SWPB R13
+        A R13,R1
+        SWPB R13
+        MOVB @BASEAD(R1),R0
+        RT
+
+INDIRX  CLR R1
+        MOVB *R9+,R1
+        AB R14,R1
+        SWPB R1
+        MOVB @BASEAD(R1),R2
+        SWPB R2
+        INC R1
+        MOVB @BASEAD(R1),R2
+        MOVB @BASEAD(R2),R0
+        RT
+        
+INDIRY  CLR R1  
+        MOVB *R9+,R1
+        SWPB R1
+        MOVB @BASEAD(R1),R2
+        SWPB R2
+        INC R1
+        MOVB @BASEAD(R1),R2
+        ANDI R13,>FF00
+        SWPB R13
+        A R13,R2
+        SWPB R13
+        MOVB @BASEAD(R2),R0
+        RT
+
+* Addressing modes - return (TI) address in R0 *
+AD_ACC  STWP R0
+        AI R0,30
+        RT
+
+AD_ZP   CLR R0
+        MOVB *R9+,R0
+        SWPB R0
+        AI R0,BASEAD
+        RT
+
+AD_ZPX  CLR R0
+        MOVB *R9+,R0
+        AB R14,R0
+        SWPB R0
+        AI R0,BASEAD
+        RT
+
+AD_ZPY  CLR R0
+        MOVB *R9+,R0
+        AB R13,R0
+        SWPB R0
+        AI R0,BASEAD
+        RT
+
+AD_AB   MOVB *R9+,R0
+        SWPB R0
+        MOVB *R9+,R0
+        AI R0,BASEAD
+        RT
+
+AD_ABX  MOVB *R9+,R0
+        SWPB R0
+        MOVB *R9+,R0
+        ANDI R14,>FF00
+        SWPB R14
+        A R14,R0
+        SWPB R14
+        AI R0,BASEAD
+        RT
+
+AD_ABY  MOVB *R9+,R0
+        SWPB R0
+        MOVB *R9+,R0
+        ANDI R13,>FF00
+        SWPB R13
+        A R13,R0
+        SWPB R13
+        AI R0,BASEAD
+        RT
+
+AD_INX  CLR R1
+        MOVB *R9+,R1
+        AB R14,R1
+        SWPB R1
+        MOVB @BASEAD(R1),R0
+        SWPB R0
+        INC R1
+        MOVB @BASEAD(R1),R0
+        AI R0,BASEAD
+        RT
+
+AD_INY  CLR R1  
+        MOVB *R9+,R1
+        SWPB R1
+        MOVB @BASEAD(R1),R0
+        SWPB R0
+        INC R1
+        MOVB @BASEAD(R1),R0
+        ANDI R13,>FF00
+        SWPB R13
+        A R13,R0
+        SWPB R13
+        AI R0,BASEAD
+        RT
+
+** Instructions **
+
+* ADC - Add with Carry to Accumulator *
+ADCI    AI R7,2
+        BL @IMMED
+        JMP ADC
+
+ADCZ    AI R7,3
+        BL @ZEROP
+        JMP ADC
+
+ADCZX   AI R7,4
+        BL @ZEROPX
+        JMP ADC
+
+ADCA    AI R7,4
+        BL @ABSOL
+        JMP ADC
+
+ADCAX   AI R7,4
+        BL @ABSOLX
+        JMP ADC
+
+ADCAY   AI R7,4
+        BL @ABSOLY
+        JMP ADC
+
+ADCIX   AI R7,6
+        BL @INDIRX
+        JMP ADC
+        
+ADCIY   AI R7,5
+        BL @INDIRY
+*       JMP ADC
+
+ADC     COC @FLAG_D,R10
+        JEQ ADCDEC
+        COC @FLAG_C,R10
+        JNE ADC1
+        AI R0,>0100
+        JEQ ADC2
+ADC1    AB R0,R15
+ADC2    STST R1
+        SZC @M_SZCV,R10
+        SZC @X_SZCV,R1
+        SOC R1,R10
+        COC @NEGAT,R15
+        JNE ADC3
+        SOC @FLAG_S,R10
+ADC3    B @MAINLP
+
+ADCDEC  MOV R15,R3
+        COC @FLAG_C,R10
+        JNE ADCDE2
+        MOV R0,R1
+        ANDI R1,>0F00
+        AI R1,>0100
+        CI R1,>0900
+        JH ADCDE3
+        AI R1,->0A00
+        AI R0,>1000
+        CI R0,>9000
+        JH ADCDE4
+ADCDE3  ANDI R0,>F000
+        SOC R1,R0
+ADCDE2  SZC @M_SZCV,R10
+        MOV R0,R1
+        MOV R15,R2
+        ANDI R1,>0F00
+        ANDI R2,>0F00
+        AB R1,R2
+        CI R2,>0900
+        JLE ADCDE5
+        AI R2,->0A00
+        AI R0,>1000
+        CI R0,>9000
+        JLE ADCDE5
+        CLR R0
+ADCDE5  ANDI R0,>F000
+        ANDI R15,>F000
+        SWPB R0
+        SWPB R15
+        A R0,R15
+        CI R15,>0090
+        JLE ADCDE6
+        AI R15,->00A0
+        SOC @FLAG_C,R10
+ADCDE6  SWPB R15
+        ANDI R15,>F000
+        SOC R2,R15
+ADCDE4  COC @NEGAT,R15
+        JNE ADCDE7
+        SOC @FLAG_S,R10
+        ANDI R3,>8000
+        CI R3,>8000
+        JNE ADCDE8
+        SOC @FLAG_V,R10
+        JMP ADCDE8
+ADCDE7  ANDI R3,>8000
+        JEQ ADCDE8
+        SOC @FLAG_V,R10
+ADCDE8  MOV R15,R15
+        JNE ADCDE9
+        SOC @FLAG_Z,R10
+ADCDE9  B @MAINLP
+
+* AND - Logical AND with Accumulator *
+ANDI    AI R7,2
+        BL @IMMED
+        JMP AND
+
+ANDZ    AI R7,3
+        BL @ZEROP
+        JMP AND
+
+ANDZX   AI R7,4
+        BL @ZEROPX
+        JMP AND
+
+ANDA    AI R7,4
+        BL @ABSOL
+        JMP AND
+
+ANDAX   AI R7,4
+        BL @ABSOLX
+        JMP AND
+
+ANDAY   AI R7,4
+        BL @ABSOLY
+        JMP AND
+
+ANDIX   AI R7,6
+        BL @INDIRX
+        JMP AND
+
+ANDIY   AI R7,5
+        BL @INDIRY
+*       JMP AND
+
+AND     INV R0
+        SZC R0,R15
+        STST R1
+        SZC @M_SZ,R10
+        SZC @X_SZ,R1
+        SOC R1,R10
+        B @MAINLP
+
+* ASL - Arithmetic shift left *
+ASLACC  AI R7,2
+        BL @AD_ACC
+        JMP ASL
+
+ASLZ    AI R7,5
+        BL @AD_ZP
+        JMP ASL
+
+ASLZX   AI R7,6
+        BL @AD_ZPX
+        JMP ASL
+
+ASLA    AI R7,6
+        BL @AD_AB
+        JMP ASL
+
+ASLAX   AI R7,7
+        BL @AD_ABX
+*       JMP ASL
+
+ASL     CLR R1
+        MOVB *R0,R1
+        SLA R1,1
+        STST R2
+        MOVB R1,*R0
+        SZC @M_SZC,R10
+        SZC @X_SZC,R2
+        SOC R2,R10
+        COC @NEGAT,R1
+        JNE ASL1
+        SOC @FLAG_S,R10
+ASL1    B @MAINLP
+
+* BIT  - test bits *
+BITZ    AI R7,3
+        BL @ZEROP
+        JMP BIT
+
+BITA    AI R7,4
+        BL @ABSOL
+*       JMP BIT
+
+BIT     SZC @M_SZV,R10
+        COC @NEGAT,R0
+        JNE BITJ1
+        SOC @FLAG_S,R10
+BITJ1   COC @BIT6,R0
+        JNE BITJ2
+        SOC @FLAG_V,R10
+BITJ2   MOV R15,R1
+        INV R0
+        SZC R0,R1
+        JNE BITJ3
+        SOC @FLAG_Z,R10
+BITJ3   B @MAINLP
+
+* BPL - branch on plus *
+BPL     AI R7,3         * This is an average
+        MOVB *R9+,R0
+        COC @FLAG_S,R10
+        JEQ BPL1
+        SRA R0,8
+        A R0,R9
+BPL1    B @MAINLP
+
+* BMI - branch on minus *
+BMI     AI R7,3
+        MOVB *R9+,R0
+        COC @FLAG_S,R10
+        JNE BMI1
+        SRA R0,8
+        A R0,R9
+BMI1    B @MAINLP
+
+* BVC - branch on overflow clear *
+BVC     AI R7,3
+        MOVB *R9+,R0
+        COC @FLAG_V,R10
+        JEQ BVC1
+        SRA R0,8
+        A R0,R9
+BVC1    B @MAINLP
+
+* BVS - branch on overflow set *
+BVS     AI R7,3
+        MOVB *R9+,R0
+        COC @FLAG_V,R10
+        JNE BVS1
+        SRA R0,8
+        A R0,R9
+BVS1    B @MAINLP
+
+* BCC - branch on carry clear *
+BCC     AI R7,3
+        MOVB *R9+,R0
+        COC @FLAG_C,R10
+        JEQ BCC1
+        SRA R0,8
+        A R0,R9
+BCC1    B @MAINLP
+
+* BCS - branch on carry set *
+BCS     AI R7,3
+        MOVB *R9+,R0
+        COC @FLAG_C,R10
+        JNE BCS1
+        SRA R0,8
+        A R0,R9
+BCS1    B @MAINLP
+
+* BNE - branch on not equal *
+BNE     AI R7,3
+        MOVB *R9+,R0
+        COC @FLAG_Z,R10
+        JEQ BNE1
+        SRA R0,8
+        A R0,R9
+BNE1    B @MAINLP
+
+* BEQ - branch on equal *
+BEQ     AI R7,3
+        MOVB *R9+,R0
+        COC @FLAG_Z,R10
+        JNE BEQ1
+        SRA R0,8
+        A R0,R9
+BEQ1    B @MAINLP
+
+* BRK - breakpoint *
+BRK     AI R7,7
+        INC R9
+        AI R9,-BASEAD
+        DEC R12
+        MOVB R9,*R12
+        SWPB R9
+        DEC R12
+        MOVB R9,*R12
+        BL @PHP
+        SOC @FLAG_B,R10
+        BL @V_INT
+        B @MAINLP
+
+* CMP - compare accumulator *
+CMPI    AI R7,2
+        BL @IMMED
+        JMP CMP
+
+CMPZ    AI R7,3
+        BL @ZEROP
+        JMP CMP
+
+CMPZX   AI R7,4
+        BL @ZEROPX
+        JMP CMP
+
+CMPA    AI R7,4
+        BL @ABSOL
+        JMP CMP
+
+CMPAX   AI R7,4
+        BL @ABSOLX
+        JMP CMP
+
+CMPAY   AI R7,4
+        BL @ABSOLY
+        JMP CMP
+
+CMPIX   AI R7,6
+        BL @INDIRX
+        JMP CMP
+
+CMPIY   AI R7,5
+        BL @INDIRY
+*       JMP CMP
+
+CMP     SZC @M_SZC,R10
+        CB R15,R0
+        STST R1
+        JL CMP1
+        SOC @FLAG_C,R10
+CMP1    COC @FLAG_Z,R1
+        JNE CMP2
+        SOC @FLAG_Z,R10
+CMP2    COC @NEGAT,R15
+        JNE CMP3
+        SOC @FLAG_S,R10
+CMP3    B @MAINLP
+
+* CPX - compare X register *
+CPXI    AI R7,2
+        BL @IMMED
+        JMP CPX
+
+CPXZ    AI R7,3
+        BL @ZEROP
+        JMP CPX
+
+CPXA    AI R7,4
+        BL @ABSOL
+*       JMP CPX
+
+CPX     SZC @M_SZC,R10
+        CB R14,R0
+        STST R1
+        JL CPX1
+        SOC @FLAG_C,R10
+CPX1    COC @FLAG_Z,R1
+        JNE CPX2
+        SOC @FLAG_Z,R10
+CPX2    COC @NEGAT,R14
+        JNE CPX3
+        SOC @FLAG_S,R10
+CPX3    B @MAINLP
+
+* CPY - compare Y register *
+CPYI    AI R7,2
+        BL @IMMED
+        JMP CPY
+
+CPYZ    AI R7,3
+        BL @ZEROP
+        JMP CPY
+
+CPYA    AI R7,4
+        BL @ABSOL
+*       JMP CPY
+
+CPY     SZC @M_SZC,R10
+        CB R13,R0
+        STST R1
+        JL CPY1
+        SOC @FLAG_C,R10
+CPY1    COC @FLAG_Z,R1
+        JNE CPY2
+        SOC @FLAG_Z,R10
+CPY2    COC @NEGAT,R13
+        JNE CPY3
+        SOC @FLAG_S,R10
+CPY3    B @MAINLP
+
+* DEC - decrement memory *
+DECZ    AI R7,5
+        BL @AD_ZP
+        JMP DEC
+
+DECZX   AI R7,6
+        BL @AD_ZPX
+        JMP DEC
+
+DECA    AI R7,6
+        BL @AD_AB
+        JMP DEC
+
+DECAX   AI R7,7
+        BL @AD_ABX
+*       JMP DEC
+
+DEC     LI R1,>FF00
+        SZC @M_SZ,R10
+        AB R1,*R0
+        JNE DEC1
+        SOC @FLAG_Z,R10
+DEC1    MOVB *R0,R1
+        COC @NEGAT,R1
+        JNE DEC2
+        SOC @FLAG_S,R10
+DEC2    B @MAINLP
+
+* EOR - bitwise exclusive OR *
+EORI    AI R7,2
+        BL @IMMED
+        JMP EOR
+
+EORZ    AI R7,3
+        BL @ZEROP
+        JMP EOR
+
+EORZX   AI R7,4
+        BL @ZEROPX
+        JMP EOR
+
+EORA    AI R7,4
+        BL @ABSOL
+        JMP EOR
+
+EORAX   AI R7,4
+        BL @ABSOLX
+        JMP EOR
+
+EORAY   AI R7,4
+        BL @ABSOLY
+        JMP EOR
+
+EORIX   AI R7,6
+        BL @INDIRX
+        JMP EOR
+
+EORIY   AI R7,5
+        BL @INDIRY
+*       JMP EOR
+
+EOR     SZC @M_SZ,R10
+        XOR R0,R15
+        JNE EOR1
+        SOC @FLAG_Z,R10
+EOR1    COC @NEGAT,R15
+        JNE EOR2
+        SOC @FLAG_S,R10
+EOR2    B @MAINLP
+
+* CLC - clear carry *
+CLC     SZC @FLAG_C,R10
+        B @MAINLP
+
+* SEC - set carry *
+SEC     SOC @FLAG_C,R10
+        B @MAINLP
+
+* CLI - clear interrupt *
+CLI     SZC @FLAG_I,R10
+        B @MAINLP
+
+* SEI - set interrupt *
+SEI     SOC @FLAG_I,R10
+        B @MAINLP
+
+* CLV - clear overflow *
+CLV     SZC @FLAG_V,R10
+        B @MAINLP
+
+* CLD - clear decimal *
+CLD     SZC @FLAG_D,R10
+        B @MAINLP
+
+* SED - set decimal *
+SED     SOC @FLAG_D,R10
+        B @MAINLP
+
+* INC - increment memory *
+INCZ    AI R7,5
+        BL @AD_ZP
+        JMP INC
+
+INCZX   AI R7,6
+        BL @AD_ZPX
+        JMP INC
+
+INCA    AI R7,6
+        BL @AD_AB
+        JMP INC
+
+INCAX   AI R7,7
+        BL @AD_ABX
+*       JMP INC
+
+INC     LI R1,>0100
+        SZC @M_SZ,R10
+        AB R1,*R0
+        JNE INC1
+        SOC @FLAG_Z,R10
+INC1    MOVB *R0,R1
+        COC @NEGAT,R1
+        JNE INC2
+        SOC @FLAG_S,R10
+INC2    B @MAINLP
+
+* JMP - Jump *
+JMPA    AI R7,3
+        MOVB *R9+,R0
+        SWPB R0
+        MOVB *R9+,R0
+        MOV R0,R9
+        AI R9,BASEAD
+        B @MAINLP
+
+JMPI    AI R7,5
+        MOVB *R9+,R0
+        SWPB R0
+        MOVB *R9+,R0
+        AI R0,BASEAD
+        MOVB *R0+,R9
+        SWPB R9
+        MOVB *R0+,R9    * NOTE: BUG - INDIRECT JUMPS THAT CROSS PAGE BOUNDARIES SHOULD WRAP!
+        AI R9,BASEAD
+        B @MAINLP
+
+* JSR - jump to subroutine *
+JSRA    AI R7,6
+        MOVB *R9+,R0
+        SWPB R0
+        MOVB *R9,R0
+        DEC R12
+        AI R9,-BASEAD
+        MOVB R9,*R12
+        SWPB R9
+        DEC R12
+        MOVB R9,*R12
+        MOV R0,R9
+        B @MAINLP
+
+* LDA - load accumulator *
+LDAI    AI R7,2
+        BL @IMMED
+        JMP LDA
+
+LDAZ    AI R7,3
+        BL @ZEROP
+        JMP LDA
+
+LDAZX   AI R7,4
+        BL @ZEROPX
+        JMP LDA
+
+LDAA    AI R7,4
+        BL @ABSOL
+        JMP LDA
+
+LDAAX   AI R7,4
+        BL @ABSOLX
+        JMP LDA
+
+LDAAY   AI R7,4
+        BL @ABSOLY
+        JMP LDA
+
+LDAIX   AI R7,6
+        BL @INDIRX
+        JMP LDA
+
+LDAIY   AI R7,5
+        BL @INDIRY
+*       JMP LDA
+
+LDA     SZC @M_SZ,R10
+        MOVB R0,R15
+        JNE LDA1
+        SOC @FLAG_Z,R10
+LDA1    COC @NEGAT,R15
+        JNE LDA2
+        SOC @FLAG_S,R10
+LDA2    B @MAINLP
+
+* LDX - load X register *
+LDXI    AI R7,2
+        BL @IMMED
+        JMP LDX
+
+LDXZ    AI R7,3
+        BL @ZEROP
+        JMP LDX
+
+LDXZY   AI R7,4
+        BL @ZEROPY
+        JMP LDX
+
+LDXA    AI R7,4
+        BL @ABSOL
+        JMP LDX
+
+LDXAY   AI R7,4
+        BL @ABSOLY
+*       JMP LDX
+
+LDX     SZC @M_SZ,R10
+        MOVB R0,R14
+        JNE LDX1
+        SOC @FLAG_Z,R10
+LDX1    COC @NEGAT,R14
+        JNE LDX2
+        SOC @FLAG_S,R10
+LDX2    B @MAINLP
+
+* LDY - load Y register *
+LDYI    AI R7,2
+        BL @IMMED
+        JMP LDY
+
+LDYZ    AI R7,3
+        BL @ZEROP
+        JMP LDY
+
+LDYZX   AI R7,4
+        BL @ZEROPX
+        JMP LDY
+
+LDYA    AI R7,4
+        BL @ABSOL
+        JMP LDY
+
+LDYAX   AI R7,4
+        BL @ABSOLX
+*       JMP LDY
+
+LDY     SZC @M_SZ,R10
+        MOVB R0,R13
+        JNE LDY1
+        SOC @FLAG_Z,R10
+LDY1    COC @NEGAT,R13
+        JNE LDY2
+        SOC @FLAG_S,R10
+LDY2    B @MAINLP
+
+* LSR - logical shift right *
+LSRACC  AI R7,2
+        BL @AD_ACC
+        JMP LSR
+
+LSRZ    AI R7,5
+        BL @AD_ZP
+        JMP LSR
+
+LSRZX   AI R7,6
+        BL @AD_ZPX
+        JMP LSR
+
+LSRA    AI R7,6
+        BL @AD_AB
+        JMP LSR
+
+LSRAX   AI R7,7
+        BL @AD_ABX
+*       JMP LSR
+
+LSR     CLR R1
+        MOVB *R0,R1
+        SRL R1,1
+        STST R2
+        MOVB R1,*R0
+        SZC @M_SZC,R10
+        SZC @X_SZC,R2
+        SOC R2,R10
+        COC @NEGAT,R1
+        JNE LSR1
+        SOC @FLAG_S,R10
+LSR1    B @MAINLP
+
+* NOP - no operation *
+NOP     AI R7,2
+        B @MAINLP
+
+* ORA - bitwise OR with accumulator *
+ORAI    AI R7,2
+        BL @IMMED
+        JMP ORA
+
+ORAZ    AI R7,2
+        BL @ZEROP
+        JMP ORA
+
+ORAZX   AI R7,3
+        BL @ZEROPX
+        JMP ORA
+
+ORAA    AI R7,4
+        BL @ABSOL
+        JMP ORA
+
+ORAAX   AI R7,4
+        BL @ABSOLX
+        JMP ORA
+
+ORAAY   AI R7,4
+        BL @ABSOLY
+        JMP ORA
+
+ORAIX   AI R7,6
+        BL @INDIRX
+        JMP ORA
+
+ORAIY   AI R7,5
+        BL @INDIRY
+*       JMP ORA
+
+ORA     SZC @M_SZ,R10
+        SOCB R0,R15
+        JNE ORA1
+        SOC @FLAG_Z,R10
+ORA1    COC @NEGAT,R15
+        JNE ORA2
+        SOC @FLAG_S,R10
+ORA2    B @MAINLP
+        
+* TAX - transfer A to X *
+TAX     AI R7,2
+        SZC @M_SZ,R10
+        MOVB R15,R14
+        JNE TAX1
+        SOC @FLAG_Z,R10
+TAX1    COC @NEGAT,R14
+        JNE TAX2
+        SOC @FLAG_S,R10
+TAX2    B @MAINLP
+
+* TXA - transfer X to A *
+TXA     AI R7,2
+        SZC @M_SZ,R10
+        MOVB R14,R15
+        JNE TXA1
+        SOC @FLAG_Z,R10
+TXA1    COC @NEGAT,R15
+        JNE TXA2
+        SOC @FLAG_S,R10
+TXA2    B @MAINLP
+
+* DEX - decrement X *
+DEX     AI R7,2
+        SZC @M_SZ,R10
+        ANDI R14,>FF00
+        AI R14,->0100
+        JNE DEX1
+        SOC @FLAG_Z,R10
+DEX1    COC @NEGAT,R14
+        JNE DEX2
+        SOC @FLAG_S,R10
+DEX2    B @MAINLP
+
+* INX - INcrement X *
+INX     AI R7,2
+        SZC @M_SZ,R10
+        ANDI R14,>FF00
+        AI R14,>0100
+        JNE INX1
+        SOC @FLAG_Z,R10
+INX1    COC @NEGAT,R14
+        JNE INX2
+        SOC @FLAG_S,R10
+INX2    B @MAINLP
+
+* TAY - transfer A to Y *
+TAY     AI R7,2
+        SZC @M_SZ,R10
+        MOVB R15,R13
+        JNE TAY1
+        SOC @FLAG_Z,R10
+TAY1    COC @NEGAT,R13
+        JNE TAY2
+        SOC @FLAG_S,R10
+TAY2    B @MAINLP
+
+* TYA - transfer Y to A *
+TYA     AI R7,2
+        SZC @M_SZ,R10
+        MOVB R13,R15
+        JNE TYA1
+        SOC @FLAG_Z,R10
+TYA1    COC @NEGAT,R15
+        JNE TYA2
+        SOC @FLAG_S,R10
+TYA2    B @MAINLP
+
+* DEY - decrement Y *
+DEY     AI R7,2
+        SZC @M_SZ,R10
+        ANDI R13,>FF00
+        AI R13,->0100
+        JNE DEY1
+        SOC @FLAG_Z,R10
+DEY1    COC @NEGAT,R13
+        JNE DEY2
+        SOC @FLAG_S,R10
+DEY2    B @MAINLP
+
+* INY - INcrement Y *
+INY     AI R7,2
+        SZC @M_SZ,R10
+        ANDI R13,>FF00
+        AI R13,>0100
+        JNE INY1
+        SOC @FLAG_Z,R10
+INY1    COC @NEGAT,R13
+        JNE INY2
+        SOC @FLAG_S,R10
+INY2    B @MAINLP
+
+* ROL - rotate left *
+ROLACC  AI R7,2
+        BL @AD_ACC
+        JMP ROL
+
+ROLZ    AI R7,5
+        BL @AD_ZP
+        JMP ROL
+
+ROLZX   AI R7,6
+        BL @AD_ZPX
+        JMP ROL
+
+ROLA    AI R7,6
+        BL @AD_AB
+        JMP ROL
+
+ROLAX   AI R7,7
+        BL @AD_ABX
+*       JMP ROL
+
+ROL     MOV R10,R2
+        SZC @M_SZC,R10
+        MOVB *R0,R1
+        COC @NEGAT,R1
+        JNE ROL1
+        SOC @FLAG_C,R10
+ROL1    SLA R1,1
+        COC @FLAG_C,R2
+        JNE ROL2
+        ORI R1,>0100
+ROL2    MOVB R1,*R0
+        JNE ROL3
+        SOC @FLAG_Z,R10
+ROL3    COC @NEGAT,R1
+        JNE ROL4
+        SOC @FLAG_S,R10
+ROL4    B @MAINLP
+
+* ROR - rotate right *
+RORACC  AI R7,2
+        BL @AD_ACC
+        JMP ROR
+
+RORZ    AI R7,5
+        BL @AD_ZP
+        JMP ROR
+
+RORZX   AI R7,6
+        BL @AD_ZPX
+        JMP ROR
+
+RORA    AI R7,6
+        BL @AD_AB
+        JMP ROR
+
+RORAX   AI R7,7
+        BL @AD_ABX
+*       JMP ROR
+
+ROR     MOV R10,R2
+        SZC @M_SZC,R10
+        MOVB *R0,R1
+        COC @BIT0,R1
+        JNE ROR1
+        SOC @FLAG_C,R10
+ROR1    SRA R1,1
+        COC @FLAG_C,R2
+        JNE ROR2
+        ORI R1,>8000
+        SOC @FLAG_S,R10
+ROR2    MOVB R1,*R0
+        JNE ROR3
+        SOC @FLAG_Z,R10
+ROR3    B @MAINLP
+
+* RTI - return from interrupt *
+RTI     BL @PLP
+        MOVB *R12+,R9
+        SWPB R9
+        MOVB *R12+,R9
+        AI R9,BASEAD
+        B @MAINLP
+
+* RTS - return from subroutine *
+RTS     MOVB *R12+,R9
+        SWPB R9
+        MOVB *R12+,R9
+        INC R9
+        AI R9,BASEAD
+        B @MAINLP
+
+* SBC - subtract with carry *
+SBCI    AI R7,2
+        BL @IMMED
+        JMP SBC
+
+SBCZ    AI R7,3
+        BL @ZEROP
+        JMP SBC
+
+SBCZX   AI R7,4
+        BL @ZEROPX
+        JMP SBC
+
+SBCA    AI R7,4
+        BL @ABSOL
+        JMP SBC
+
+SBCAX   AI R7,4
+        BL @ABSOLX
+        JMP SBC
+
+SBCAY   AI R7,4
+        BL @ABSOLY
+        JMP SBC
+
+SBCIX   AI R7,6
+        BL @INDIRX
+        JMP SBC
+        
+SBCIY   AI R7,5
+        BL @INDIRY
+        JMP SBC
+
+SBC     ANDI R0,>FF00
+        NEG R0
+        B @ADC
+
+* STA - store accumulator *
+STAZ    AI R7,3
+        BL @AD_ZP
+        JMP STA
+
+STAZX   AI R7,4
+        BL @AD_ZPX
+        JMP STA
+
+STAA    AI R7,4
+        BL @AD_AB
+        JMP STA
+
+STAAX   AI R7,4
+        BL @AD_ABX
+        JMP STA
+
+STAAY   AI R7,4
+        BL @AD_ABY
+        JMP STA
+
+STAIX   AI R7,6
+        BL @AD_INX
+        JMP STA
+
+STAIY   AI R7,5
+        BL @AD_INY
+*       JMP STA
+
+STA     MOVB R15,*R0
+        B @MAINLP
+
+* TXS - transfer X to Stack pointer *
+TXS     AI R7,2
+        MOV R14,R12
+        SWPB R12
+        ANDI R12,>00FF
+        AI R12,BASEAD
+        INC R12
+        B @MAINLP
+
+* TSX - transfer stack pointer to X *
+TSX     AI R7,2
+        MOV R12,R14
+        DEC R14
+        AI R14,-BASEAD
+        SWPB R14
+        B @MAINLP
+
+* PHA - push accumulator *
+PHA     AI R7,3
+        DEC R12
+        MOVB R15,*R12
+        B @MAINLP
+
+* PLA - pull accumulator *
+PLA     AI R7,4
+        MOVB *R12+,R15
+        B @MAINLP
+
+* PHP - push processor status *
+* NEED TO CONVERT THE FLAGS TO 6502 FORMAT
+PHP     AI R7,3
+        LI R0,>2000     * RESERVED BIT IS ALWAYS SET
+        COC @FLAG_S,R10
+        JNE PHP1
+        ORI R0,>8000
+PHP1    COC @FLAG_V,R10
+        JNE PHP2
+        ORI R0,>4000
+PHP2    COC @FLAG_B,R10
+        JNE PHP3
+        ORI R0,>1000
+PHP3    COC @FLAG_D,R10
+        JNE PHP4
+        ORI R0,>0800
+PHP4    COC @FLAG_I,R10
+        JNE PHP5
+        ORI R0,>0400
+PHP5    COC @FLAG_Z,R10
+        JNE PHP6
+        ORI R0,>0200
+PHP6    COC @FLAG_C,R10
+        JNE PHP7
+        ORI R0,>0100
+PHP7    DEC R12
+        MOVB R0,*R12
+        B @MAINLP
+
+* PLP - Pull processor status *
+* NEED TO CONVERT THE FLAGS BACK!
+PLP     AI R7,4
+        MOVB *12+,R0
+        ANDI R10,X_FLGD
+        COC @BIT7,R0
+        JNE PLP1
+        SOC @FLAG_S,R10
+PLP1    COC @BIT6,R0
+        JNE PLP2
+        SOC @FLAG_V,R10
+PLP2    COC @BIT4,R0
+        JNE PLP3
+        SOC @FLAG_B,R10
+PLP3    COC @BIT3,R0
+        JNE PLP4
+        SOC @FLAG_D,R10
+PLP4    COC @BIT2,R0
+        JNE PLP5
+        SOC @FLAG_I,R10
+PLP5    COC @BIT1,R0
+        JNE PLP6
+        SOC @FLAG_Z,R10
+PLP6    COC @BIT0,R0
+        JNE PLP7
+        SOC @FLAG_C,R10
+PLP7    B @MAINLP
+
+* STX - store X *
+STXZ    AI R7,3
+        BL @AD_ZP
+        JMP STX
+
+STXZY   AI R7,4
+        BL @AD_ZPY
+        JMP STX
+
+STXA    AI R7,4
+        BL @AD_AB
+*       JMP STX
+
+STX     MOVB R14,*R0
+        B @MAINLP
+
+* STY - store Y *
+STYZ    AI R7,3
+        BL @AD_ZP
+        JMP STY
+
+STYZX   AI R7,4
+        BL @AD_ZPX
+        JMP STY
+
+STYA    AI R7,4
+        BL @AD_AB
+*       JMP STY
+
+STY     MOVB R13,*R0
+        B @MAINLP
+
+* ACTUALLY DO SOME EMULATION
+RESET   MOV R11,R6
+        BL @V_PWR
+        CLR R15
+        CLR R14
+        CLR R13
+        LI R12,>A200
+        CLR R10
+        CLR R7
+        B *R6
+
+* INTERRUPT ROUTINE FOR STATS
+* PRINT HOW MANY 6502 CYCLES WERE EXECUTED
+* THE REAL THING SHOULD AVERAGE ABOUT >2080 @ 1MHZ
+USRINT  MOV @CYCLES,R3
+        CLR @CYCLES
+* SET VDP ADDRESS TO WRITE TO >0000
+        LI R0,>0040
+        MOVB R0,@>8C02
+        SWPB R0
+        MOVB R0,@>8C02
+* PRINT A DIGIT
+        MOV R3,R1
+        ANDI R1,>F000
+        SRL R1,4
+        AI R1,'0'*256
+        CI R1,'9'*256
+        JLE USRIN1
+        AI R1,>0700
+USRIN1  MOVB R1,@>8C00
+* PRINT A DIGIT
+        MOV R3,R1
+        ANDI R1,>0F00
+        AI R1,'0'*256
+        CI R1,'9'*256
+        JLE USRIN2
+        AI R1,>0700
+USRIN2  MOVB R1,@>8C00
+* PRINT A DIGIT
+        MOV R3,R1
+        ANDI R1,>00F0
+        SLA R1,4
+        AI R1,'0'*256
+        CI R1,'9'*256
+        JLE USRIN3
+        AI R1,>0700
+USRIN3  MOVB R1,@>8C00
+* PRINT A DIGIT
+        MOV R3,R1
+        ANDI R1,>000F
+        SLA R1,8
+        AI R1,'0'*256
+        CI R1,'9'*256
+        JLE USRIN4
+        AI R1,>0700
+USRIN4  MOVB R1,@>8C00
+        RT
+
+START   LWPI MYWP
+        LI R0,USRINT
+        MOV R0,@>83C4
+        BL @RESET
+* COPY IN A TEST PROGRAM
+        MOV R9,R0
+        LI R1,TEST1
+CPLP    MOV *R1+,*R0+
+        JNE CPLP
+* NOW WE'RE READY TO START
+MAINLP  LIMI 2
+        LIMI 0
+        CLR R1
+        MOVB *R9+,R1
+        SWPB R1
+        SLA R1,1
+        MOV @OPCODES(R1),R0
+        JEQ MAINLP      * SKIP INVALID OPCODES
+        B *R0           * opcodes know to jump back to MAINLP
+        JMP MAINLP      * never reached
+
+        COPY "D:\work\TI\6502\OPCODES.A99"
+
+* TEST PROGRAMS (BYTE IS BROKEN IN ASSEMBLER, SO MANUALLY SPACED)
+* LOAD EACH PROGRAM AT $0200
+TEST1   DATA >A005              LDY #5      ; Y = 5
+        DATA >8400              STY $00     ; ($00) = 5
+        DATA >A900              LDA #0      ; A = 0
+        DATA >AAA9              TAX         ; X = 0
+        DATA >0748              LDA #7      ; A = 7
+*                               PHA         ; (S) = 7
+        DATA >6500              ADC $00     ; A = 5+7
+        DATA >A868              TAY         ; Y = 12
+*                               PLA         ; A = 7
+        DATA >EAEA              NOP
+*                               NOP
+        DATA >A2AA              LDX #$AA    ; X = 10101010
+        DATA >8604              STX $04     ; ($04) = $AA
+        DATA >A90F              LDA #$0F    ; A = 00001111
+        DATA >0504              ORA $04     ; A = 10101111
+        DATA >A90F              LDA #$0F
+        DATA >2504              AND $04     ; A = 00001010
+        DATA >A90F              LDA #$0F
+        DATA >4504              EOR $04     ; A = 10100101
+        DATA >EAEA              NOP
+*                               NOP
+        DATA >4C00              JMP $0200
+        DATA >0200
+        DATA >0000
+
+        END
+
